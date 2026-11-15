@@ -74,7 +74,26 @@ export async function signInWithPin(db: DB, family: FamilyId, userId: string, pi
   const m = await findMember(db, family, userId);
   if (!m) return fail("That person wasn't found. Pick your name again.");
   if (!m.pinHash) return fail("You haven't picked a PIN yet.");
-  if (m.pinLockedUntil && m.pinLockedUntil.getTime() > Date.now()) return fail(lockMessage(m.pinLockedUntil));
+  // Reserve this try BEFORE checking the PIN, in one statement that also enforces the lock.
+  // Postgres re-checks the WHERE clause on the locked row, so a burst of simultaneous guesses
+  // gets at most MAX_WRONG_TRIES reservations; the rest find the name locked.
+  const now = new Date();
+  const nowSql = sql`${now.toISOString()}::timestamptz`;
+  const lockUntil = new Date(now.getTime() + LOCK_MINUTES * 60_000);
+  // an expired lock means the count starts over
+  const newCount = sql`(CASE WHEN ${users.pinLockedUntil} IS NOT NULL THEN 1 ELSE ${users.failedPinAttempts} + 1 END)`;
+  const [reserved] = await db
+    .update(users)
+    .set({
+      failedPinAttempts: newCount,
+      pinLockedUntil: sql`CASE WHEN ${newCount} >= ${MAX_WRONG_TRIES} THEN ${lockUntil.toISOString()}::timestamptz ELSE NULL END`,
+    })
+    .where(and(eq(users.id, m.id), sql`(${users.pinLockedUntil} IS NULL OR ${users.pinLockedUntil} <= ${nowSql})`))
+    .returning({ lockedUntil: users.pinLockedUntil });
+  if (!reserved) {
+    const [row] = await db.select({ lockedUntil: users.pinLockedUntil }).from(users).where(eq(users.id, m.id));
+    return fail(lockMessage(row?.lockedUntil ?? lockUntil));
+  }
 
   if (isValidPin(pin) && (await verifyPin(pin, m.pinHash))) {
     await db
@@ -84,17 +103,7 @@ export async function signInWithPin(db: DB, family: FamilyId, userId: string, pi
     return { ok: true, user: { id: m.id, name: m.name }, stamp: pinStamp(m.pinHash) };
   }
 
-  // Count the wrong try in SQL so simultaneous guesses can't slip past the limit.
-  const lockUntil = new Date(Date.now() + LOCK_MINUTES * 60_000);
-  const [after] = await db
-    .update(users)
-    .set({
-      failedPinAttempts: sql`CASE WHEN ${users.failedPinAttempts} + 1 >= ${MAX_WRONG_TRIES} THEN 0 ELSE ${users.failedPinAttempts} + 1 END`,
-      pinLockedUntil: sql`CASE WHEN ${users.failedPinAttempts} + 1 >= ${MAX_WRONG_TRIES} THEN ${lockUntil.toISOString()}::timestamptz ELSE ${users.pinLockedUntil} END`,
-    })
-    .where(eq(users.id, m.id))
-    .returning({ lockedUntil: users.pinLockedUntil });
-  if (after?.lockedUntil && after.lockedUntil.getTime() > Date.now()) return fail(lockMessage(after.lockedUntil));
+  if (reserved.lockedUntil) return fail(lockMessage(reserved.lockedUntil));
   return fail("That PIN isn't right. Try again.");
 }
 

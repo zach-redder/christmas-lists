@@ -74,6 +74,14 @@ describe("signing in with a PIN", () => {
     });
   });
 
+  it("a burst of simultaneous guesses still only gets 5 tries", async () => {
+    const guesses = Array.from({ length: 15 }, (_, i) => String(i).padStart(4, "0")); // all wrong
+    guesses.push("1111"); // the right PIN, arriving after the burst
+    const results = await Promise.all(guesses.map((g) => signInWithPin(db, "redder", momId, g)));
+    expect(results.every((r) => !r.ok)).toBe(true);
+    expect(results.filter((r) => !r.ok && /isn't right/.test(r.message)).length).toBeLessThanOrEqual(4);
+  });
+
   it("the lock wears off after 15 minutes", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

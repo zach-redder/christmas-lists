@@ -172,6 +172,8 @@ test("removing a claimed wish notifies the gift-giver", async ({ browser }) => {
   await giver.getByRole("button", { name: /Not you\? Switch/ }).click();
   await expect(giver).toHaveURL(/\/sign-in$/);
   await giver.getByRole("link", { name: "Penny" }).click();
+  await expect(giver).toHaveURL(/\/sign-in\?as=/);
+  await giver.waitForLoadState("networkidle"); // typing before the page is interactive gets wiped
   await giver.getByLabel("Your PIN").fill(PIN);
   await giver.getByRole("button", { name: "Sign in" }).click();
   await expect(giver.getByText("Hi,")).toContainText("Penny");
