@@ -7,7 +7,7 @@ import { FAMILY_COOKIE, SESSION_COOKIE, verifyFamilyToken, verifySessionToken } 
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasFamily = await verifyFamilyToken(request.cookies.get(FAMILY_COOKIE)?.value);
+  const hasFamily = (await verifyFamilyToken(request.cookies.get(FAMILY_COOKIE)?.value)) !== null;
 
   if (pathname === "/welcome") {
     return hasFamily ? NextResponse.redirect(new URL("/sign-in", request.url)) : NextResponse.next();

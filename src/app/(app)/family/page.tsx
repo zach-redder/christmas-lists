@@ -4,11 +4,11 @@ import { getDb } from "@/server/db";
 import { listFamily } from "@/server/giver";
 import { requireUser } from "@/server/session";
 
-export const metadata = { title: "Family Lists · Redder Christmas 2026" };
+export const metadata = { title: "Family Lists" };
 
 export default async function FamilyPage() {
   const me = await requireUser();
-  const family = await listFamily(await getDb(), me.id);
+  const family = await listFamily(await getDb(), me.family.id, me.id);
 
   return (
     <div className="space-y-5">

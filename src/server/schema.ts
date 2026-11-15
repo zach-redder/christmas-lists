@@ -18,13 +18,16 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // which family this person belongs to (see families.ts); families never see each other
+    family: text("family").notNull().default("redder"),
     name: text("name").notNull(),
     // lower-cased, trimmed, single-spaced name; makes "Mom" and " mom " the same person
     nameKey: text("name_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("idx_users_name_key_unique").on(t.nameKey)],
+  // names are unique within a family: both families can have a "Mom"
+  (t) => [uniqueIndex("idx_users_family_name_key_unique").on(t.family, t.nameKey)],
 );
 
 export const items = pgTable(

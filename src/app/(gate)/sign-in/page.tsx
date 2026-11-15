@@ -1,15 +1,17 @@
 import { JoinForm, NameButton } from "@/components/GateForms";
 import { redirect } from "next/navigation";
+import { leaveFamilyAction } from "@/server/actions";
 import { getDb } from "@/server/db";
-import { hasFamilyAccess } from "@/server/session";
+import { currentFamily } from "@/server/session";
 import { listUsers } from "@/server/users";
 
-export const metadata = { title: "Who are you? · Redder Christmas 2026" };
+export const metadata = { title: "Who are you?" };
 
 export default async function SignInPage() {
   // The family name list is only for people who know the passcode.
-  if (!(await hasFamilyAccess())) redirect("/welcome");
-  const people = await listUsers(await getDb());
+  const family = await currentFamily();
+  if (!family) redirect("/welcome");
+  const people = await listUsers(await getDb(), family.id);
 
   return (
     <div className="space-y-6">
@@ -33,6 +35,11 @@ export default async function SignInPage() {
         </h2>
         <JoinForm />
       </section>
+      <form action={leaveFamilyAction} className="text-center">
+        <button type="submit" className="min-h-11 text-sm text-ink-soft underline underline-offset-4 hover:text-pine">
+          Not the {family.name} family? Enter a different password
+        </button>
+      </form>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { getDb } from "@/server/db";
 import { getMyGifts, type Change, type MyGift } from "@/server/gifts";
 import { requireUser } from "@/server/session";
 
-export const metadata = { title: "My Gifts · Redder Christmas 2026" };
+export const metadata = { title: "My Gifts" };
 
 const FIELD_LABEL: Record<Change["field"], string> = { title: "Name", url: "Link", notes: "Notes", price: "Price" };
 

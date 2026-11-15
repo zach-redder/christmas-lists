@@ -11,8 +11,8 @@ import { acknowledgeChange, dismissRemoved } from "./gifts";
 import { addIdea, claimItem, deleteIdea, unclaimItem, updateIdea } from "./giver";
 import { addMyItem, deleteMyItem, moveMyItem, updateMyItem, type Move } from "./owner";
 import type { Result } from "./result";
-import { endSession, grantFamilyAccess, hasFamilyAccess, requireUser, startSession } from "./session";
-import { checkPasscode } from "./tokens";
+import { currentFamily, endSession, grantFamilyAccess, leaveFamily, requireUser, startSession } from "./session";
+import { familyForPasscode } from "./tokens";
 import { createUser, getUserById, touchUser, type PublicUser } from "./users";
 import { itemInputFromForm } from "./validation";
 
@@ -34,17 +34,19 @@ function refresh() {
 // ---------- Family gate & sign-in ----------
 
 export async function enterPasscodeAction(_prev: FormState, form: FormData): Promise<FormState> {
-  if (!checkPasscode(field(form, "passcode"))) {
+  const family = familyForPasscode(field(form, "passcode"));
+  if (!family) {
     return { error: "That's not the family password. Ask whoever sent you the link!" };
   }
-  await grantFamilyAccess();
+  await grantFamilyAccess(family.id);
   redirect("/sign-in");
 }
 
 export async function signInAsAction(form: FormData): Promise<void> {
-  if (!(await hasFamilyAccess())) redirect("/welcome");
+  const family = await currentFamily();
+  if (!family) redirect("/welcome");
   const db = await getDb();
-  const user = await getUserById(db, field(form, "userId"));
+  const user = await getUserById(db, family.id, field(form, "userId"));
   if (!user) redirect("/sign-in");
   await touchUser(db, user.id);
   await startSession(user.id);
@@ -54,8 +56,9 @@ export async function signInAsAction(form: FormData): Promise<void> {
 export type JoinState = { error?: string; taken?: PublicUser; nonce?: number };
 
 export async function joinAction(_prev: JoinState, form: FormData): Promise<JoinState> {
-  if (!(await hasFamilyAccess())) redirect("/welcome");
-  const result = await createUser(await getDb(), field(form, "name"));
+  const family = await currentFamily();
+  if (!family) redirect("/welcome");
+  const result = await createUser(await getDb(), family.id, field(form, "name"));
   if (!result.ok) {
     return result.reason === "taken"
       ? { taken: result.user, nonce: Date.now() }
@@ -68,6 +71,11 @@ export async function joinAction(_prev: JoinState, form: FormData): Promise<Join
 export async function switchPersonAction(): Promise<void> {
   await endSession();
   redirect("/sign-in");
+}
+
+export async function leaveFamilyAction(): Promise<void> {
+  await leaveFamily();
+  redirect("/welcome");
 }
 
 // ---------- My List (owner) ----------
@@ -104,7 +112,7 @@ export async function moveMyItemAction(form: FormData): Promise<void> {
 
 export async function claimAction(_prev: FormState, form: FormData): Promise<FormState> {
   const me = await requireUser();
-  const result = await claimItem(await getDb(), me.id, field(form, "itemId"));
+  const result = await claimItem(await getDb(), me.family.id, me.id, field(form, "itemId"));
   refresh();
   return toState(result);
 }
@@ -117,7 +125,7 @@ export async function unclaimAction(form: FormData): Promise<void> {
 
 export async function addIdeaAction(_prev: FormState, form: FormData): Promise<FormState> {
   const me = await requireUser();
-  const result = await addIdea(await getDb(), me.id, field(form, "ownerId"), itemInputFromForm(form));
+  const result = await addIdea(await getDb(), me.family.id, me.id, field(form, "ownerId"), itemInputFromForm(form));
   if (result.ok) refresh();
   return toState(result);
 }

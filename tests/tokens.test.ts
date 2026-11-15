@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SignJWT } from "jose";
 import {
-  checkPasscode,
+  familyForPasscode,
   signFamilyToken,
   signSessionToken,
   verifyFamilyToken,
@@ -27,21 +28,56 @@ describe("signed tokens", () => {
     expect(await verifySessionToken(token)).toBeNull();
   });
 
-  it("checks the passcode case-insensitively and ignores surrounding spaces", () => {
+  it("maps each family's password to that family, case-insensitively", () => {
     vi.stubEnv("FAMILY_PASSCODE", "Snowman26");
-    expect(checkPasscode("  snowMAN26 ")).toBe(true);
-    expect(checkPasscode("snowman")).toBe(false);
+    vi.stubEnv("PALMBOS_PASSCODE", "Tinsel");
+    expect(familyForPasscode("  snowMAN26 ")?.id).toBe("redder");
+    expect(familyForPasscode("tinsel")?.id).toBe("palmbos");
+    expect(familyForPasscode("snowman")).toBeNull();
+    expect(familyForPasscode("")).toBeNull();
   });
 
-  it("changing the family passcode invalidates existing family cookies", async () => {
+  it("a family token remembers which family it is for", async () => {
+    vi.stubEnv("FAMILY_PASSCODE", "one");
+    vi.stubEnv("PALMBOS_PASSCODE", "two");
+    expect(await verifyFamilyToken(await signFamilyToken("redder"))).toBe("redder");
+    expect(await verifyFamilyToken(await signFamilyToken("palmbos"))).toBe("palmbos");
+  });
+
+  it("changing one family's password signs out only that family", async () => {
     vi.stubEnv("FAMILY_PASSCODE", "first");
-    const token = await signFamilyToken();
-    expect(await verifyFamilyToken(token)).toBe(true);
+    vi.stubEnv("PALMBOS_PASSCODE", "pine");
+    const redder = await signFamilyToken("redder");
+    const palmbos = await signFamilyToken("palmbos");
     vi.stubEnv("FAMILY_PASSCODE", "second");
-    expect(await verifyFamilyToken(token)).toBe(false);
+    expect(await verifyFamilyToken(redder)).toBeNull();
+    expect(await verifyFamilyToken(palmbos)).toBe("palmbos");
+  });
+
+  it("keeps cookies issued before families existed working for the original family", async () => {
+    vi.stubEnv("FAMILY_PASSCODE", "classic");
+    vi.stubEnv("SESSION_SECRET", "s".repeat(40));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("classic"));
+    const stamp = Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+    const legacy = await new SignJWT({ fam: stamp })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode("s".repeat(40)));
+    expect(await verifyFamilyToken(legacy)).toBe("redder");
+  });
+
+  it("a family without a configured password is closed in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("FAMILY_PASSCODE", "open");
+    vi.stubEnv("PALMBOS_PASSCODE", "");
+    vi.stubEnv("SESSION_SECRET", "s".repeat(40));
+    expect(familyForPasscode("reindeer")).toBeNull();
+    expect(familyForPasscode("")).toBeNull();
+    expect(familyForPasscode("open")?.id).toBe("redder");
   });
 
   it("a session token is not accepted as a family token", async () => {
-    expect(await verifyFamilyToken(await signSessionToken("u"))).toBe(false);
+    expect(await verifyFamilyToken(await signSessionToken("u"))).toBeNull();
   });
 });

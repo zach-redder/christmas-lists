@@ -1,12 +1,12 @@
 import { PasscodeForm } from "@/components/GateForms";
 
-export const metadata = { title: "Welcome · Redder Christmas 2026" };
+export const metadata = { title: "Welcome" };
 
 export default function WelcomePage() {
   return (
     <>
       <p className="mb-4 text-center text-ink-soft">
-        This is our family&apos;s private Christmas list site. Enter the family password to come in.
+        This is a private family Christmas list site. Enter your family&apos;s password to come in.
       </p>
       <PasscodeForm />
     </>

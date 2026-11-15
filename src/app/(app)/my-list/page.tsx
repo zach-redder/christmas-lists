@@ -4,7 +4,7 @@ import { getDb } from "@/server/db";
 import { getMyItems } from "@/server/owner";
 import { requireUser } from "@/server/session";
 
-export const metadata = { title: "My List · Redder Christmas 2026" };
+export const metadata = { title: "My List" };
 
 export default async function MyListPage() {
   const me = await requireUser();

@@ -8,8 +8,8 @@ const lora = Lora({ subsets: ["latin"], variable: "--font-lora" });
 const caveat = Caveat({ subsets: ["latin"], variable: "--font-caveat" });
 
 export const metadata: Metadata = {
-  title: "Redder Christmas 2026",
-  description: "The Redder family Christmas lists.",
+  title: { default: "Christmas Lists 2026", template: "%s · Christmas Lists 2026" },
+  description: "Private family Christmas lists.",
   robots: { index: false, follow: false },
 };
 

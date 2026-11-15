@@ -26,8 +26,8 @@ describe("secrecy rule", () => {
 
   beforeEach(async () => {
     db = await createTestDb();
-    const o = await createUser(db, "Owner Olive");
-    const g = await createUser(db, CLAIMER);
+    const o = await createUser(db, "redder", "Owner Olive");
+    const g = await createUser(db, "redder", CLAIMER);
     if (!o.ok || !g.ok) throw new Error("setup");
     owner = o.user.id;
     giver = g.user.id;
@@ -36,8 +36,8 @@ describe("secrecy rule", () => {
     await addMyItem(db, owner, { title: "Wish Two", url: "", notes: "", price: "$$" });
     [claimedId, unclaimedId] = (await getMyItems(db, owner)).map((i) => i.id);
 
-    expect(await claimItem(db, giver, claimedId)).toEqual({ ok: true });
-    expect((await addIdea(db, giver, owner, { title: IDEA, url: "", notes: "", price: "$" })).ok).toBe(true);
+    expect(await claimItem(db, "redder", giver, claimedId)).toEqual({ ok: true });
+    expect((await addIdea(db, "redder", giver, owner, { title: IDEA, url: "", notes: "", price: "$" })).ok).toBe(true);
 
     forbidden = [CLAIMER, giver, IDEA, "claim", "Claim", "gotten", "Gotten"];
   });
@@ -75,15 +75,15 @@ describe("secrecy rule", () => {
   });
 
   it("the family overview and user lists leak nothing to the owner", async () => {
-    const family = await listFamily(db, owner);
+    const family = await listFamily(db, "redder", owner);
     // the giver legitimately appears as a family member, so only check claim/idea words here
     const json = JSON.stringify(family);
     for (const word of [IDEA, "claim", "Claim", "gotten", "Gotten"]) expect(json).not.toContain(word);
     // the giver appears as a family member, but their card says nothing about claims
     expect(Object.keys(family[0]).sort()).toEqual(["id", "itemCount", "name"]);
     expect(family.find((f) => f.id === owner)).toBeUndefined();
-    expect(Object.keys((await listUsers(db))[0]).sort()).toEqual(["id", "name"]);
-    expect(Object.keys((await getUserById(db, owner))!).sort()).toEqual(["id", "name"]);
+    expect(Object.keys((await listUsers(db, "redder"))[0]).sort()).toEqual(["id", "name"]);
+    expect(Object.keys((await getUserById(db, "redder", owner))!).sort()).toEqual(["id", "name"]);
   });
 
   it("the owner's My Gifts page says nothing about their own items", async () => {
@@ -92,12 +92,12 @@ describe("secrecy rule", () => {
   });
 
   it("the owner cannot open their own list from the giver side", async () => {
-    await expect(getListForGiver(db, owner, owner)).rejects.toBeInstanceOf(OwnListError);
+    await expect(getListForGiver(db, "redder", owner, owner)).rejects.toBeInstanceOf(OwnListError);
   });
 
   it("the own-list check can't be bypassed with a differently-cased id", async () => {
-    await expect(getListForGiver(db, owner, owner.toUpperCase())).rejects.toBeInstanceOf(OwnListError);
-    const r = await addIdea(db, owner, owner.toUpperCase(), { title: "self idea", url: "", notes: "", price: "" });
+    await expect(getListForGiver(db, "redder", owner, owner.toUpperCase())).rejects.toBeInstanceOf(OwnListError);
+    const r = await addIdea(db, "redder", owner, owner.toUpperCase(), { title: "self idea", url: "", notes: "", price: "" });
     expect(r.ok).toBe(false);
     expect(JSON.stringify(await getMyItems(db, owner))).not.toContain("self idea");
   });

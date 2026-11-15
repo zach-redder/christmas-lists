@@ -3,13 +3,17 @@
 A private family Christmas list site. Everyone keeps a wish list; everyone else can browse it and
 mark items "gotten", and **the list owner never finds out** what was gotten, by whom, or when.
 
+Several families share one site: each family has its own password, and the password you enter
+decides which family you join. Families never see each other's people, lists, ideas or claims.
+Families are listed in `src/server/families.ts`.
+
 Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Neon Postgres + Drizzle · hosted on Vercel.
 
 ## Run it locally
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000, family password: snowman
+npm run dev          # http://localhost:3000, passwords: snowman (Redder), reindeer (Palmbos)
 ```
 
 No database setup is needed locally: without `DATABASE_URL` the app uses an on-disk PGlite
@@ -48,10 +52,12 @@ another relative and peek. Optional PINs could be added later without changing t
 3. In the Vercel project: **Storage → Create / Marketplace → Neon** → create a free database and
    connect it to the project. This sets `DATABASE_URL` automatically.
 4. **Settings → Environment Variables**, add for Production (and Preview):
-   - `FAMILY_PASSCODE`: the family password (case-insensitive)
+   - `FAMILY_PASSCODE`: the Redder family password (case-insensitive)
+   - `PALMBOS_PASSCODE`: the Palmbos family password (must differ from the others; if unset, that family can't get in)
    - `SESSION_SECRET`: a random string of 32+ characters, e.g. `openssl rand -base64 32`
 5. Redeploy. `npm run build` runs `scripts/migrate.ts` first, which creates/updates the tables.
 6. Send the family the URL and the password.
 
-Changing `FAMILY_PASSCODE` signs every device out of the family gate (people keep their lists).
+Changing a family's password signs only that family's devices out of the gate (people keep their lists).
+To add another family: add an entry to `src/server/families.ts` and set its password env var.
 For local dev against Neon: `vercel link` then `vercel env pull .env.local`.

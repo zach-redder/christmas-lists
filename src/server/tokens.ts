@@ -2,13 +2,13 @@
  * Signed cookie tokens. No Next.js imports, so this works in proxy.ts, server code, and tests.
  */
 import { jwtVerify, SignJWT } from "jose";
+import { DEFAULT_FAMILY_ID, FAMILIES, getFamily, type Family, type FamilyId } from "./families";
 
 export const FAMILY_COOKIE = "rc_family";
 export const SESSION_COOKIE = "rc_session";
 export const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 const DEV_SECRET = "dev-only-secret-change-me-dev-only-secret";
-const DEV_PASSCODE = "snowman";
 
 function isProd() {
   return process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_DB !== "1";
@@ -22,21 +22,27 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-function passcode(): string {
-  const value = process.env.FAMILY_PASSCODE ?? (isProd() ? undefined : DEV_PASSCODE);
-  if (!value) throw new Error("FAMILY_PASSCODE must be set.");
-  return normalizePasscode(value);
-}
-
 const normalizePasscode = (value: string) => value.trim().toLowerCase();
 
-export function checkPasscode(input: string): boolean {
-  return normalizePasscode(input) === passcode();
+/** A family's password, or null when it isn't configured (that family simply can't get in). */
+function passcodeFor(family: Family): string | null {
+  const value = process.env[family.passcodeEnv] || (isProd() ? undefined : family.devPasscode);
+  const normalized = value ? normalizePasscode(value) : "";
+  return normalized || null;
 }
 
-/** Fingerprint of the current passcode: changing the passcode signs every device out of the family gate. */
-async function passcodeStamp(): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passcode()));
+/** Which family a typed password belongs to, if any. */
+export function familyForPasscode(input: string): Family | null {
+  const typed = normalizePasscode(input);
+  if (!typed) return null;
+  return FAMILIES.find((f) => passcodeFor(f) === typed) ?? null;
+}
+
+/** Fingerprint of a family's password: changing it signs that family's devices out of the gate. */
+async function passcodeStamp(family: Family): Promise<string | null> {
+  const passcode = passcodeFor(family);
+  if (!passcode) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passcode));
   return Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -58,13 +64,21 @@ async function verify(token: string | undefined): Promise<Record<string, unknown
   }
 }
 
-export async function signFamilyToken(): Promise<string> {
-  return sign({ fam: await passcodeStamp() });
+export async function signFamilyToken(familyId: FamilyId): Promise<string> {
+  const family = getFamily(familyId);
+  const stamp = family ? await passcodeStamp(family) : null;
+  if (!family || !stamp) throw new Error(`Family "${familyId}" has no password configured.`);
+  return sign({ fam: stamp, fid: family.id });
 }
 
-export async function verifyFamilyToken(token: string | undefined): Promise<boolean> {
+/** The family this device was let in for, or null. */
+export async function verifyFamilyToken(token: string | undefined): Promise<FamilyId | null> {
   const payload = await verify(token);
-  return payload?.fam === (await passcodeStamp());
+  // Cookies issued before there were several families carry no family id: they belong to the original one.
+  const family = getFamily(payload?.fid ?? (payload?.fam ? DEFAULT_FAMILY_ID : undefined));
+  if (!family) return null;
+  const stamp = await passcodeStamp(family);
+  return stamp && payload?.fam === stamp ? family.id : null;
 }
 
 export async function signSessionToken(userId: string): Promise<string> {

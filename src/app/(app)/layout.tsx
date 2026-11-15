@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/" className="flex min-h-11 items-center gap-2">
             <HollySprig className="h-8 w-12 drop-shadow" />
             <span className="font-display text-xl font-bold tracking-tight text-snow sm:text-2xl">
-              Redder Christmas <span className="font-script text-2xl font-bold text-[#f6d48b] sm:text-3xl">2026</span>
+              {me.family.name} Christmas <span className="font-script text-2xl font-bold text-[#f6d48b] sm:text-3xl">2026</span>
             </span>
           </Link>
           <TopNav />

@@ -6,6 +6,7 @@ import "server-only";
 import { aliasedTable, and, asc, count, eq, isNull, ne } from "drizzle-orm";
 import type { DB } from "./db-types";
 import { fail, OK, type Result } from "./result";
+import type { FamilyId } from "./families";
 import { claims, items, users, type Price } from "./schema";
 import { getUserById, isUuid, type PublicUser } from "./users";
 import { validateItem, type ItemInput } from "./validation";
@@ -19,7 +20,7 @@ export class OwnListError extends Error {
 
 export type FamilyMember = { id: string; name: string; itemCount: number };
 
-export async function listFamily(db: DB, me: string): Promise<FamilyMember[]> {
+export async function listFamily(db: DB, family: FamilyId, me: string): Promise<FamilyMember[]> {
   const rows = await db
     .select({ id: users.id, name: users.name, itemCount: count(items.id) })
     .from(users)
@@ -27,7 +28,7 @@ export async function listFamily(db: DB, me: string): Promise<FamilyMember[]> {
       items,
       and(eq(items.ownerId, users.id), eq(items.addedById, users.id), isNull(items.deletedAt)),
     )
-    .where(ne(users.id, me))
+    .where(and(eq(users.family, family), ne(users.id, me)))
     .groupBy(users.id, users.name, users.nameKey)
     .orderBy(asc(users.nameKey));
   return rows.map((r) => ({ ...r, itemCount: Number(r.itemCount) }));
@@ -50,10 +51,16 @@ export type GiverList = { owner: PublicUser; wishes: GiverItem[]; ideas: GiverId
 const claimer = aliasedTable(users, "claimer");
 const adder = aliasedTable(users, "adder");
 
-export async function getListForGiver(db: DB, viewer: string, ownerId: string): Promise<GiverList | null> {
+export async function getListForGiver(
+  db: DB,
+  family: FamilyId,
+  viewer: string,
+  ownerId: string,
+): Promise<GiverList | null> {
   // Compare canonical database ids only: Postgres matches uuids case-insensitively,
   // so comparing the raw URL string would let "/family/<MY-ID-UPPERCASED>" slip through.
-  const owner = await getUserById(db, ownerId);
+  // Someone from another family looks exactly like someone who doesn't exist.
+  const owner = await getUserById(db, family, ownerId);
   if (!owner) return null;
   if (owner.id === viewer) throw new OwnListError();
 
@@ -104,12 +111,13 @@ export async function getListForGiver(db: DB, viewer: string, ownerId: string): 
 
 const UNAVAILABLE = fail("That item isn't on the list anymore.");
 
-export async function claimItem(db: DB, me: string, itemId: string): Promise<Result> {
+export async function claimItem(db: DB, family: FamilyId, me: string, itemId: string): Promise<Result> {
   if (!isUuid(itemId)) return UNAVAILABLE;
   const [item] = await db
     .select({ ownerId: items.ownerId, title: items.title, url: items.url, notes: items.notes, price: items.price })
     .from(items)
-    .where(and(eq(items.id, itemId), isNull(items.deletedAt)));
+    .innerJoin(users, eq(users.id, items.ownerId))
+    .where(and(eq(items.id, itemId), isNull(items.deletedAt), eq(users.family, family)));
   if (!item) return UNAVAILABLE;
   if (item.ownerId === me) return fail("You can't mark items on your own list.");
 
@@ -140,8 +148,14 @@ export async function unclaimItem(db: DB, me: string, itemId: string): Promise<R
   return OK;
 }
 
-export async function addIdea(db: DB, me: string, ownerId: string, input: ItemInput): Promise<Result> {
-  const owner = await getUserById(db, ownerId);
+export async function addIdea(
+  db: DB,
+  family: FamilyId,
+  me: string,
+  ownerId: string,
+  input: ItemInput,
+): Promise<Result> {
+  const owner = await getUserById(db, family, ownerId);
   if (!owner) return fail("That person wasn't found.");
   if (owner.id === me) return fail("You can't add secret ideas to your own list.");
   const v = validateItem(input);

@@ -4,10 +4,10 @@ const OWNER = "Olive";
 const GIVER = "Bartholomew";
 const IDEA = "Secret Telescope";
 
-async function join(page: Page, name: string) {
+async function join(page: Page, name: string, password = "snowman26" /* case-insensitive */) {
   await page.goto("/");
   await expect(page).toHaveURL(/\/welcome$/);
-  await page.getByLabel("Family password").fill("snowman26"); // case-insensitive
+  await page.getByLabel("Family password").fill(password);
   await page.getByRole("button", { name: "Come on in" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
   await page.getByLabel("Type your name").fill(name);
@@ -172,4 +172,43 @@ test("removing a claimed wish notifies the gift-giver", async ({ browser }) => {
 
   await ownerCtx.close();
   await giverCtx.close();
+});
+
+test("a second family gets its own separate site behind its own password", async ({ browser }) => {
+  const redCtx = await browser.newContext();
+  const palmCtx = await browser.newContext();
+  const red = await redCtx.newPage();
+  const palm = await palmCtx.newPage();
+
+  await join(red, "Grandpa Joe");
+  await addWish(red, "Redder Fishing Rod");
+  await expect(red.getByRole("link", { name: /Redder Christmas/ })).toBeVisible();
+
+  // Same name is fine in another family
+  await join(palm, "Grandpa Joe", "TINSEL");
+  await expect(palm.getByRole("link", { name: /Palmbos Christmas/ })).toBeVisible();
+  await addWish(palm, "Palmbos Puzzle");
+
+  // Neither family sees the other
+  await palm.goto("/family");
+  await expect(palm.getByText(/No one else has joined yet/)).toBeVisible();
+  await palm.getByRole("button", { name: /Not you\? Switch/ }).click();
+  await expect(palm.getByRole("button", { name: "Olive" })).toHaveCount(0);
+  await expect(palm.getByRole("button", { name: "Grandpa Joe" })).toHaveCount(1);
+  const palmHtml = await palm.content();
+  expect(palmHtml).not.toContain("Redder");
+
+  // A Redder person's list is a 404 for the Palmbos family
+  await red.goto("/family");
+  await expect(red.getByRole("link", { name: /Grandpa Joe/ })).toHaveCount(0);
+
+  // A device can switch to the other family by entering the other password
+  await palm.getByRole("button", { name: /Not the Palmbos family/ }).click();
+  await expect(palm).toHaveURL(/\/welcome$/);
+  await palm.getByLabel("Family password").fill("snowman26");
+  await palm.getByRole("button", { name: "Come on in" }).click();
+  await expect(palm.getByRole("heading", { name: /Redder Christmas/ })).toBeVisible();
+
+  await redCtx.close();
+  await palmCtx.close();
 });

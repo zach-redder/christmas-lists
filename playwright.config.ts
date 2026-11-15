@@ -24,6 +24,7 @@ export default defineConfig({
       ALLOW_LOCAL_DB: "1",
       PGLITE_DIR: ".pglite-e2e",
       FAMILY_PASSCODE: "Snowman26",
+      PALMBOS_PASSCODE: "Tinsel",
       SESSION_SECRET: "e2e-secret-e2e-secret-e2e-secret-e2e-secret",
     },
   },

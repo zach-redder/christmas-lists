@@ -2,40 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY = "rc-snow";
 const FLAKES = 60;
 
 type Flake = { x: number; y: number; r: number; speed: number; drift: number; phase: number };
 
-function readPreference(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
-
 export function Snowfall() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [enabled, setEnabled] = useState(true);
+  // Snow always falls, except for people whose device asks for reduced motion (an accessibility setting).
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync with localStorage after hydration
-    setEnabled(readPreference());
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync with the OS setting after hydration
     setReducedMotion(mq.matches);
     const onChange = () => setReducedMotion(mq.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  const running = enabled && !reducedMotion;
-
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!running || !canvas || !ctx) return;
+    if (reducedMotion || !canvas || !ctx) return;
 
     let width = 0;
     let height = 0;
@@ -96,35 +84,7 @@ export function Snowfall() {
       document.removeEventListener("visibilitychange", onVisibility);
       ctx.clearRect(0, 0, width, height);
     };
-  }, [running]);
+  }, [reducedMotion]);
 
-  const toggle = () => {
-    const next = !enabled;
-    setEnabled(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next ? "on" : "off");
-    } catch {
-      /* storage unavailable (private mode): toggle still works for this visit */
-    }
-  };
-
-  return (
-    <>
-      <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0 h-full w-full" aria-hidden="true" />
-      {!reducedMotion && (
-        <button
-          type="button"
-          onClick={toggle}
-          aria-pressed={enabled}
-          aria-label={enabled ? "Turn off falling snow" : "Turn on falling snow"}
-          title={enabled ? "Turn off falling snow" : "Turn on falling snow"}
-          className={`fixed right-3 bottom-24 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-parchment bg-snow/90 text-xl shadow md:bottom-4 ${
-            enabled ? "text-pine" : "text-ink-soft/50 line-through"
-          }`}
-        >
-          <span aria-hidden="true">❄</span>
-        </button>
-      )}
-    </>
-  );
+  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0 h-full w-full" aria-hidden="true" />;
 }
