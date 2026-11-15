@@ -28,13 +28,18 @@ export type CreateUserResult =
   | { ok: false; reason: "taken"; user: PublicUser }
   | { ok: false; reason: "invalid"; message: string };
 
-export async function createUser(db: DB, family: FamilyId, rawName: string): Promise<CreateUserResult> {
+export async function createUser(
+  db: DB,
+  family: FamilyId,
+  rawName: string,
+  pinHash: string | null = null,
+): Promise<CreateUserResult> {
   const n = normalizeName(rawName);
   if (!n.ok) return { ok: false, reason: "invalid", message: n.message };
 
   const [created] = await db
     .insert(users)
-    .values({ family, name: n.name, nameKey: n.nameKey })
+    .values({ family, name: n.name, nameKey: n.nameKey, pinHash })
     .onConflictDoNothing({ target: [users.family, users.nameKey] })
     .returning(publicColumns);
   if (created) return { ok: true, user: created };

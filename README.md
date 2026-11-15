@@ -42,8 +42,17 @@ The secrecy rule is checked in three places:
 | Owner edits/deletes return the same response whether or not an item was claimed; deletes are soft | `src/server/owner.ts` |
 | Identity always comes from a signed cookie; every server action re-checks it | `src/server/session.ts`, `src/server/actions.ts` |
 
-**Known, accepted limitation (honor system):** login is name-only, so someone *could* sign in as
-another relative and peek. Optional PINs could be added later without changing the data.
+## Signing in: names + PINs
+
+Tapping a name only picks who you are; you then enter that person's 4-digit PIN. New people pick a
+PIN when they join; people who joined before PINs existed pick one the first time they tap their name.
+Five wrong PINs lock that name for 15 minutes. Sessions carry a fingerprint of the PIN, so a new or
+reset PIN signs that person out on every device. PINs are stored only as salted scrypt hashes
+(`src/server/pin.ts`, `src/server/auth.ts`).
+
+**Forgotten PIN:** go to `/admin`, sign in with `ADMIN_PASSWORD`, and press "Reset PIN". The person
+picks a new PIN next time they tap their name. The admin page shows names and PIN status only, never
+anything about lists or gifts. Without `ADMIN_PASSWORD` set, the admin page is closed. (Local dev: `admin`.)
 
 ## Deploy to Vercel
 
@@ -54,6 +63,7 @@ another relative and peek. Optional PINs could be added later without changing t
 4. **Settings → Environment Variables**, add for Production (and Preview):
    - `FAMILY_PASSCODE`: the Redder family password (case-insensitive)
    - `PALMBOS_PASSCODE`: the Palmbos family password (must differ from the others; if unset, that family can't get in)
+   - `ADMIN_PASSWORD`: password for the `/admin` PIN-reset page (case-sensitive)
    - `SESSION_SECRET`: a random string of 32+ characters, e.g. `openssl rand -base64 32`
 5. Redeploy. `npm run build` runs `scripts/migrate.ts` first, which creates/updates the tables.
 6. Send the family the URL and the password.

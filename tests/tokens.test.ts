@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SignJWT } from "jose";
 import {
+  checkAdminPassword,
   familyForPasscode,
+  signAdminToken,
+  verifyAdminToken,
   signFamilyToken,
   signSessionToken,
   verifyFamilyToken,
@@ -12,8 +15,8 @@ describe("signed tokens", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("round-trips a session and rejects tampering", async () => {
-    const token = await signSessionToken("user-123");
-    expect(await verifySessionToken(token)).toBe("user-123");
+    const token = await signSessionToken("user-123", "pinstamp");
+    expect(await verifySessionToken(token)).toEqual({ userId: "user-123", pinStamp: "pinstamp" });
     const [h, p, s] = token.split(".");
     const forgedPayload = Buffer.from(JSON.stringify({ sub: "someone-else" })).toString("base64url");
     expect(await verifySessionToken(`${h}.${forgedPayload}.${s}`)).toBeNull();
@@ -23,7 +26,7 @@ describe("signed tokens", () => {
 
   it("rejects tokens signed with a different secret", async () => {
     vi.stubEnv("SESSION_SECRET", "a".repeat(40));
-    const token = await signSessionToken("u");
+    const token = await signSessionToken("u", "p");
     vi.stubEnv("SESSION_SECRET", "b".repeat(40));
     expect(await verifySessionToken(token)).toBeNull();
   });
@@ -78,6 +81,23 @@ describe("signed tokens", () => {
   });
 
   it("a session token is not accepted as a family token", async () => {
-    expect(await verifyFamilyToken(await signSessionToken("u"))).toBeNull();
+    expect(await verifyFamilyToken(await signSessionToken("u", "p"))).toBeNull();
+  });
+
+  it("admin password and cookie; changing the password ends admin sessions; closed when unset in production", async () => {
+    vi.stubEnv("ADMIN_PASSWORD", "Holly-Admin");
+    expect(checkAdminPassword("Holly-Admin")).toBe(true);
+    expect(checkAdminPassword("holly-admin")).toBe(false);
+    const token = await signAdminToken();
+    expect(await verifyAdminToken(token)).toBe(true);
+    expect(await verifyAdminToken(await signSessionToken("u", "p"))).toBe(false);
+    vi.stubEnv("ADMIN_PASSWORD", "changed");
+    expect(await verifyAdminToken(token)).toBe(false);
+
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SESSION_SECRET", "s".repeat(40));
+    vi.stubEnv("ADMIN_PASSWORD", "");
+    expect(checkAdminPassword("")).toBe(false);
+    expect(checkAdminPassword("admin")).toBe(false);
   });
 });

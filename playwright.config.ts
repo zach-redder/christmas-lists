@@ -25,6 +25,7 @@ export default defineConfig({
       PGLITE_DIR: ".pglite-e2e",
       FAMILY_PASSCODE: "Snowman26",
       PALMBOS_PASSCODE: "Tinsel",
+      ADMIN_PASSWORD: "Holly-Admin",
       SESSION_SECRET: "e2e-secret-e2e-secret-e2e-secret-e2e-secret",
     },
   },

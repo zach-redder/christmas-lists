@@ -1,17 +1,27 @@
-import { JoinForm, NameButton } from "@/components/GateForms";
+import { JoinForm, NameButton, PinForm } from "@/components/GateForms";
 import { redirect } from "next/navigation";
 import { leaveFamilyAction } from "@/server/actions";
+import { getSignInTarget } from "@/server/auth";
 import { getDb } from "@/server/db";
 import { currentFamily } from "@/server/session";
 import { listUsers } from "@/server/users";
 
 export const metadata = { title: "Who are you?" };
 
-export default async function SignInPage() {
+export default async function SignInPage({ searchParams }: { searchParams: Promise<{ as?: string | string[] }> }) {
   // The family name list is only for people who know the passcode.
   const family = await currentFamily();
   if (!family) redirect("/welcome");
-  const people = await listUsers(await getDb(), family.id);
+  const db = await getDb();
+
+  const { as } = await searchParams;
+  if (typeof as === "string") {
+    const target = await getSignInTarget(db, family.id, as);
+    if (!target) redirect("/sign-in");
+    return <PinForm key={target.user.id} userId={target.user.id} name={target.user.name} setup={!target.hasPin} />;
+  }
+
+  const people = await listUsers(db, family.id);
 
   return (
     <div className="space-y-6">

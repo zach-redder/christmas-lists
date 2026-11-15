@@ -6,6 +6,8 @@ import { DEFAULT_FAMILY_ID, FAMILIES, getFamily, type Family, type FamilyId } fr
 
 export const FAMILY_COOKIE = "rc_family";
 export const SESSION_COOKIE = "rc_session";
+export const ADMIN_COOKIE = "rc_admin";
+export const ADMIN_MAX_AGE_SECONDS = 60 * 60 * 12;
 export const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 const DEV_SECRET = "dev-only-secret-change-me-dev-only-secret";
@@ -46,11 +48,11 @@ async function passcodeStamp(family: Family): Promise<string | null> {
   return Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function sign(claims: Record<string, string>): Promise<string> {
+async function sign(claims: Record<string, string>, maxAgeSeconds = COOKIE_MAX_AGE_SECONDS): Promise<string> {
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`${COOKIE_MAX_AGE_SECONDS}s`)
+    .setExpirationTime(`${maxAgeSeconds}s`)
     .sign(secretKey());
 }
 
@@ -81,11 +83,47 @@ export async function verifyFamilyToken(token: string | undefined): Promise<Fami
   return stamp && payload?.fam === stamp ? family.id : null;
 }
 
-export async function signSessionToken(userId: string): Promise<string> {
-  return sign({ sub: userId });
+/** `pin` is a fingerprint of the person's PIN when they signed in; a changed or reset PIN ends the session. */
+export async function signSessionToken(userId: string, pinStamp: string): Promise<string> {
+  return sign({ sub: userId, pin: pinStamp });
 }
 
-export async function verifySessionToken(token: string | undefined): Promise<string | null> {
+export async function verifySessionToken(
+  token: string | undefined,
+): Promise<{ userId: string; pinStamp: string | undefined } | null> {
   const payload = await verify(token);
-  return typeof payload?.sub === "string" ? payload.sub : null;
+  if (typeof payload?.sub !== "string") return null;
+  return { userId: payload.sub, pinStamp: typeof payload.pin === "string" ? payload.pin : undefined };
+}
+
+// ---------- Admin (PIN resets) ----------
+
+/** The admin password, or null when unset in production (the admin page is then closed). */
+function adminPassword(): string | null {
+  const value = process.env.ADMIN_PASSWORD || (isProd() ? undefined : "admin");
+  return value ? value : null;
+}
+
+async function adminStamp(): Promise<string | null> {
+  const pw = adminPassword();
+  if (!pw) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`admin:${pw}`));
+  return Array.from(new Uint8Array(digest).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function checkAdminPassword(input: string): boolean {
+  const pw = adminPassword();
+  return pw !== null && input === pw;
+}
+
+export async function signAdminToken(): Promise<string> {
+  const stamp = await adminStamp();
+  if (!stamp) throw new Error("ADMIN_PASSWORD is not set.");
+  return sign({ adm: stamp }, ADMIN_MAX_AGE_SECONDS);
+}
+
+export async function verifyAdminToken(token: string | undefined): Promise<boolean> {
+  const stamp = await adminStamp();
+  if (!stamp) return false;
+  return (await verify(token))?.adm === stamp;
 }

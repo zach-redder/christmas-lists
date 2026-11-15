@@ -25,6 +25,10 @@ export const users = pgTable(
     nameKey: text("name_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    // salted scrypt hash of the person's 4-digit PIN; null until they set one (people who joined before PINs)
+    pinHash: text("pin_hash"),
+    failedPinAttempts: integer("failed_pin_attempts").notNull().default(0),
+    pinLockedUntil: timestamp("pin_locked_until", { withTimezone: true }),
   },
   // names are unique within a family: both families can have a "Mom"
   (t) => [uniqueIndex("idx_users_family_name_key_unique").on(t.family, t.nameKey)],

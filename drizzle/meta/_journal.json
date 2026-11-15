@@ -15,6 +15,13 @@
       "when": 1794769610626,
       "tag": "0001_families",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794770663665,
+      "tag": "0002_pins",
+      "breakpoints": true
     }
   ]
 }

@@ -7,13 +7,24 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "./db";
+import { adminResetPin, joinWithPin, setFirstPin, signInWithPin } from "./auth";
 import { acknowledgeChange, dismissRemoved } from "./gifts";
 import { addIdea, claimItem, deleteIdea, unclaimItem, updateIdea } from "./giver";
 import { addMyItem, deleteMyItem, moveMyItem, updateMyItem, type Move } from "./owner";
 import type { Result } from "./result";
-import { currentFamily, endSession, grantFamilyAccess, leaveFamily, requireUser, startSession } from "./session";
-import { familyForPasscode } from "./tokens";
-import { createUser, getUserById, touchUser, type PublicUser } from "./users";
+import {
+  currentFamily,
+  endAdmin,
+  endSession,
+  grantAdmin,
+  grantFamilyAccess,
+  isAdmin,
+  leaveFamily,
+  requireUser,
+  startSession,
+} from "./session";
+import { checkAdminPassword, familyForPasscode } from "./tokens";
+import type { PublicUser } from "./users";
 import { itemInputFromForm } from "./validation";
 
 export type FormState = { ok?: boolean; error?: string; nonce?: number };
@@ -42,14 +53,18 @@ export async function enterPasscodeAction(_prev: FormState, form: FormData): Pro
   redirect("/sign-in");
 }
 
-export async function signInAsAction(form: FormData): Promise<void> {
+/** Tapped your name: enter your PIN, or pick one if you joined before PINs (or yours was reset). */
+export async function pinSignInAction(_prev: FormState, form: FormData): Promise<FormState> {
   const family = await currentFamily();
   if (!family) redirect("/welcome");
   const db = await getDb();
-  const user = await getUserById(db, family.id, field(form, "userId"));
-  if (!user) redirect("/sign-in");
-  await touchUser(db, user.id);
-  await startSession(user.id);
+  const userId = field(form, "userId");
+  const result =
+    field(form, "mode") === "setup"
+      ? await setFirstPin(db, family.id, userId, field(form, "pin"), field(form, "confirm"))
+      : await signInWithPin(db, family.id, userId, field(form, "pin"));
+  if (!result.ok) return { error: result.message, nonce: Date.now() };
+  await startSession(result.user.id, result.stamp);
   redirect("/");
 }
 
@@ -58,13 +73,11 @@ export type JoinState = { error?: string; taken?: PublicUser; nonce?: number };
 export async function joinAction(_prev: JoinState, form: FormData): Promise<JoinState> {
   const family = await currentFamily();
   if (!family) redirect("/welcome");
-  const result = await createUser(await getDb(), family.id, field(form, "name"));
+  const result = await joinWithPin(await getDb(), family.id, field(form, "name"), field(form, "pin"), field(form, "confirm"));
   if (!result.ok) {
-    return result.reason === "taken"
-      ? { taken: result.user, nonce: Date.now() }
-      : { error: result.message, nonce: Date.now() };
+    return "taken" in result ? { taken: result.taken, nonce: Date.now() } : { error: result.message, nonce: Date.now() };
   }
-  await startSession(result.user.id);
+  await startSession(result.user.id, result.stamp);
   redirect("/my-list");
 }
 
@@ -76,6 +89,25 @@ export async function switchPersonAction(): Promise<void> {
 export async function leaveFamilyAction(): Promise<void> {
   await leaveFamily();
   redirect("/welcome");
+}
+
+// ---------- Admin (PIN resets) ----------
+
+export async function adminLoginAction(_prev: FormState, form: FormData): Promise<FormState> {
+  if (!checkAdminPassword(field(form, "password"))) return { error: "That's not the admin password.", nonce: Date.now() };
+  await grantAdmin();
+  redirect("/admin");
+}
+
+export async function adminResetPinAction(form: FormData): Promise<void> {
+  if (!(await isAdmin())) redirect("/admin");
+  await adminResetPin(await getDb(), field(form, "userId"));
+  revalidatePath("/admin");
+}
+
+export async function adminLogoutAction(): Promise<void> {
+  await endAdmin();
+  redirect("/admin");
 }
 
 // ---------- My List (owner) ----------

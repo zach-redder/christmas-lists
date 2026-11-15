@@ -7,6 +7,8 @@ import { FAMILY_COOKIE, SESSION_COOKIE, verifyFamilyToken, verifySessionToken } 
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // The admin page has its own password and works without a family.
+  if (pathname === "/admin") return NextResponse.next();
   const hasFamily = (await verifyFamilyToken(request.cookies.get(FAMILY_COOKIE)?.value)) !== null;
 
   if (pathname === "/welcome") {
@@ -15,8 +17,8 @@ export async function proxy(request: NextRequest) {
   if (!hasFamily) return NextResponse.redirect(new URL("/welcome", request.url));
   if (pathname === "/sign-in") return NextResponse.next();
 
-  const userId = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
-  if (!userId) return NextResponse.redirect(new URL("/sign-in", request.url));
+  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
+  if (!session) return NextResponse.redirect(new URL("/sign-in", request.url));
   return NextResponse.next();
 }
 

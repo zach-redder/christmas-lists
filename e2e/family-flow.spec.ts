@@ -4,13 +4,17 @@ const OWNER = "Olive";
 const GIVER = "Bartholomew";
 const IDEA = "Secret Telescope";
 
-async function join(page: Page, name: string, password = "snowman26" /* case-insensitive */) {
+const PIN = "2468";
+
+async function join(page: Page, name: string, password = "snowman26" /* case-insensitive */, pin = PIN) {
   await page.goto("/");
   await expect(page).toHaveURL(/\/welcome$/);
   await page.getByLabel("Family password").fill(password);
   await page.getByRole("button", { name: "Come on in" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
   await page.getByLabel("Type your name").fill(name);
+  await page.getByLabel("Choose a 4-number PIN").fill(pin);
+  await page.getByLabel("Type your PIN again").fill(pin);
   await page.getByRole("button", { name: "Join the family list" }).click();
   await expect(page).toHaveURL(/\/my-list$/);
 }
@@ -164,10 +168,12 @@ test("removing a claimed wish notifies the gift-giver", async ({ browser }) => {
   await giver.getByRole("button", { name: "OK, remove from my gifts" }).click();
   await expect(giver.getByText("You haven't marked any gifts yet.")).toBeVisible();
 
-  // returning users sign in by tapping their name
+  // returning users tap their name, then need that person's PIN
   await giver.getByRole("button", { name: /Not you\? Switch/ }).click();
   await expect(giver).toHaveURL(/\/sign-in$/);
-  await giver.getByRole("button", { name: "Penny" }).click();
+  await giver.getByRole("link", { name: "Penny" }).click();
+  await giver.getByLabel("Your PIN").fill(PIN);
+  await giver.getByRole("button", { name: "Sign in" }).click();
   await expect(giver.getByText("Hi,")).toContainText("Penny");
 
   await ownerCtx.close();
@@ -193,8 +199,8 @@ test("a second family gets its own separate site behind its own password", async
   await palm.goto("/family");
   await expect(palm.getByText(/No one else has joined yet/)).toBeVisible();
   await palm.getByRole("button", { name: /Not you\? Switch/ }).click();
-  await expect(palm.getByRole("button", { name: "Olive" })).toHaveCount(0);
-  await expect(palm.getByRole("button", { name: "Grandpa Joe" })).toHaveCount(1);
+  await expect(palm.getByRole("link", { name: "Olive" })).toHaveCount(0);
+  await expect(palm.getByRole("link", { name: "Grandpa Joe" })).toHaveCount(1);
   const palmHtml = await palm.content();
   expect(palmHtml).not.toContain("Redder");
 
@@ -211,4 +217,60 @@ test("a second family gets its own separate site behind its own password", async
 
   await redCtx.close();
   await palmCtx.close();
+});
+
+test("tapping someone else's name doesn't get you in without their PIN; admin can reset it", async ({ browser }) => {
+  const run = Math.random().toString(36).slice(2, 6); // unique names so the test can repeat on one database
+  const SUE = `Aunt Sue ${run}`;
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await join(page, SUE, "snowman26", "1357");
+  await addWish(page, "Teapot");
+
+  const peeker = await (await browser.newContext()).newPage();
+  await join(peeker, `Cousin Vinny ${run}`);
+  await peeker.getByRole("button", { name: /Not you\? Switch/ }).click();
+  await peeker.getByRole("link", { name: SUE }).click();
+  await expect(peeker).toHaveURL(/\/sign-in\?as=/);
+  await peeker.waitForLoadState("networkidle"); // typing before the page is interactive gets wiped
+  // wait for each answer: the old error message stays on screen while the next try is checked
+  const tryPin = async (pin: string) => {
+    await peeker.getByLabel("Your PIN").fill(pin);
+    await Promise.all([
+      peeker.waitForResponse((r) => r.request().method() === "POST"),
+      peeker.getByRole("button", { name: "Sign in" }).click(),
+    ]);
+  };
+  for (let i = 0; i < 4; i++) {
+    await tryPin("0000");
+    await expect(peeker.getByText("That PIN isn't right")).toBeVisible();
+  }
+  await tryPin("0000");
+  await expect(peeker.getByText(/Too many wrong tries/)).toBeVisible();
+  await peeker.goto("/my-list");
+  await expect(peeker).toHaveURL(/\/sign-in$/);
+
+  // Admin resets Aunt Sue's PIN: she is signed out and picks a new one
+  const admin = await (await browser.newContext()).newPage();
+  await admin.goto("/admin");
+  await admin.getByLabel("Admin password").fill("wrong");
+  await admin.getByRole("button", { name: "Sign in as admin" }).click();
+  await expect(admin.getByText("That's not the admin password.")).toBeVisible();
+  await admin.getByLabel("Admin password").fill("Holly-Admin");
+  await admin.getByRole("button", { name: "Sign in as admin" }).click();
+  await expect(admin.getByText(/locked/)).toBeVisible();
+  expect(await admin.content()).not.toContain("Teapot");
+  await admin.getByRole("button", { name: `Reset ${SUE}'s PIN` }).click();
+  await expect(admin.getByRole("listitem").filter({ hasText: SUE })).toContainText("no PIN yet");
+
+  await page.goto("/my-list");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await page.getByRole("link", { name: SUE }).click();
+  await page.getByLabel("Choose your PIN").fill("8642");
+  await page.getByLabel("Type it again").fill("8642");
+  await page.getByRole("button", { name: "Save PIN and sign in" }).click();
+  await expect(page.getByText("Hi,")).toContainText(SUE);
+  await page.goto("/my-list");
+  await expect(page.getByRole("heading", { name: "Teapot" })).toBeVisible();
+  await ctx.close();
 });

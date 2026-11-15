@@ -3,16 +3,21 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "./db";
 import { getFamily, type Family, type FamilyId } from "./families";
+import { sessionUser } from "./auth";
 import {
+  ADMIN_COOKIE,
+  ADMIN_MAX_AGE_SECONDS,
   COOKIE_MAX_AGE_SECONDS,
   FAMILY_COOKIE,
   SESSION_COOKIE,
+  signAdminToken,
   signFamilyToken,
   signSessionToken,
+  verifyAdminToken,
   verifyFamilyToken,
   verifySessionToken,
 } from "./tokens";
-import { getUserById, type PublicUser } from "./users";
+import type { PublicUser } from "./users";
 
 const cookieOptions = {
   httpOnly: true,
@@ -36,9 +41,9 @@ export type Me = PublicUser & { family: Family };
 export async function requireUser(): Promise<Me> {
   const family = await currentFamily();
   if (!family) redirect("/welcome");
-  const userId = await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
-  // Only people in the device's family count: a session from another family means "sign in again".
-  const user = userId ? await getUserById(await getDb(), family.id, userId) : null;
+  const session = await verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  // Only a session made with this person's current PIN, in the device's family, counts.
+  const user = session ? await sessionUser(await getDb(), family.id, session.userId, session.pinStamp) : null;
   if (!user) redirect("/sign-in");
   return { ...user, family };
 }
@@ -50,8 +55,20 @@ export async function grantFamilyAccess(familyId: FamilyId): Promise<void> {
   jar.delete(SESSION_COOKIE);
 }
 
-export async function startSession(userId: string): Promise<void> {
-  (await cookies()).set(SESSION_COOKIE, await signSessionToken(userId), cookieOptions);
+export async function startSession(userId: string, pinStamp: string): Promise<void> {
+  (await cookies()).set(SESSION_COOKIE, await signSessionToken(userId, pinStamp), cookieOptions);
+}
+
+export async function isAdmin(): Promise<boolean> {
+  return verifyAdminToken((await cookies()).get(ADMIN_COOKIE)?.value);
+}
+
+export async function grantAdmin(): Promise<void> {
+  (await cookies()).set(ADMIN_COOKIE, await signAdminToken(), { ...cookieOptions, maxAge: ADMIN_MAX_AGE_SECONDS });
+}
+
+export async function endAdmin(): Promise<void> {
+  (await cookies()).delete(ADMIN_COOKIE);
 }
 
 export async function endSession(): Promise<void> {
