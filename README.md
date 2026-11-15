@@ -1,4 +1,4 @@
-# Redder Christmas 2026 
+# Redder Christmas 2026  
 
 A private family Christmas list site. Everyone keeps a wish list; everyone else can browse it and
 mark items "gotten", and **the list owner never finds out** what was gotten, by whom, or when.
