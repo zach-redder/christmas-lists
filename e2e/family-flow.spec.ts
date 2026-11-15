@@ -109,6 +109,8 @@ test("full family flow keeps every claim secret from the list owner", async ({ b
   // trying to open their own list from the giver side bounces them back
   await owner.goto(`/family/${ownerId}`);
   await expect(owner).toHaveURL(/\/my-list$/);
+  await owner.goto(`/family/${ownerId.toUpperCase()}`); // Postgres matches uuids case-insensitively
+  await expect(owner).toHaveURL(/\/my-list$/);
   await owner.goto("/");
   await owner.waitForLoadState("networkidle");
 

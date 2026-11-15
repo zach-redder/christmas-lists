@@ -51,9 +51,11 @@ const claimer = aliasedTable(users, "claimer");
 const adder = aliasedTable(users, "adder");
 
 export async function getListForGiver(db: DB, viewer: string, ownerId: string): Promise<GiverList | null> {
-  if (viewer === ownerId) throw new OwnListError();
+  // Compare canonical database ids only: Postgres matches uuids case-insensitively,
+  // so comparing the raw URL string would let "/family/<MY-ID-UPPERCASED>" slip through.
   const owner = await getUserById(db, ownerId);
   if (!owner) return null;
+  if (owner.id === viewer) throw new OwnListError();
 
   const rows = await db
     .select({
@@ -72,7 +74,7 @@ export async function getListForGiver(db: DB, viewer: string, ownerId: string): 
     .leftJoin(claims, eq(claims.itemId, items.id))
     .leftJoin(claimer, eq(claimer.id, claims.claimerId))
     .leftJoin(adder, eq(adder.id, items.addedById))
-    .where(and(eq(items.ownerId, ownerId), isNull(items.deletedAt)))
+    .where(and(eq(items.ownerId, owner.id), isNull(items.deletedAt)))
     .orderBy(asc(items.position), asc(items.createdAt));
 
   const toItem = (r: (typeof rows)[number]): GiverItem => ({
@@ -89,9 +91,9 @@ export async function getListForGiver(db: DB, viewer: string, ownerId: string): 
 
   return {
     owner,
-    wishes: rows.filter((r) => r.addedById === ownerId).map(toItem),
+    wishes: rows.filter((r) => r.addedById === owner.id).map(toItem),
     ideas: rows
-      .filter((r) => r.addedById !== ownerId)
+      .filter((r) => r.addedById !== owner.id)
       .map((r) => ({
         ...toItem(r),
         addedByName: r.addedByName ?? "Someone",
@@ -139,11 +141,12 @@ export async function unclaimItem(db: DB, me: string, itemId: string): Promise<R
 }
 
 export async function addIdea(db: DB, me: string, ownerId: string, input: ItemInput): Promise<Result> {
-  if (ownerId === me) return fail("You can't add secret ideas to your own list.");
-  if (!(await getUserById(db, ownerId))) return fail("That person wasn't found.");
+  const owner = await getUserById(db, ownerId);
+  if (!owner) return fail("That person wasn't found.");
+  if (owner.id === me) return fail("You can't add secret ideas to your own list.");
   const v = validateItem(input);
   if (!v.ok) return fail(v.message);
-  await db.insert(items).values({ ...v.item, ownerId, addedById: me });
+  await db.insert(items).values({ ...v.item, ownerId: owner.id, addedById: me });
   return OK;
 }
 

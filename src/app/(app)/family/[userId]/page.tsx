@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { GiverListView } from "@/components/GiverListView";
 import { getDb } from "@/server/db";
-import { getListForGiver } from "@/server/giver";
+import { getListForGiver, OwnListError } from "@/server/giver";
 import { requireUser } from "@/server/session";
 
 export const metadata = { title: "Family List · Redder Christmas 2026" };
@@ -11,9 +11,11 @@ export default async function PersonListPage({ params }: { params: Promise<{ use
   const { userId } = await params;
   const me = await requireUser();
   // Secrecy rule: nobody may view their own list from the gift-giver side.
-  if (userId === me.id) redirect("/my-list");
-
-  const list = await getListForGiver(await getDb(), me.id, userId);
+  // getListForGiver checks against the canonical database id, so any spelling of my id is caught.
+  const list = await getListForGiver(await getDb(), me.id, userId).catch((err: unknown) => {
+    if (err instanceof OwnListError) redirect("/my-list");
+    throw err;
+  });
   if (!list) notFound();
 
   return (

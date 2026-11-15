@@ -95,6 +95,13 @@ describe("secrecy rule", () => {
     await expect(getListForGiver(db, owner, owner)).rejects.toBeInstanceOf(OwnListError);
   });
 
+  it("the own-list check can't be bypassed with a differently-cased id", async () => {
+    await expect(getListForGiver(db, owner, owner.toUpperCase())).rejects.toBeInstanceOf(OwnListError);
+    const r = await addIdea(db, owner, owner.toUpperCase(), { title: "self idea", url: "", notes: "", price: "" });
+    expect(r.ok).toBe(false);
+    expect(JSON.stringify(await getMyItems(db, owner))).not.toContain("self idea");
+  });
+
   it("owner-queries module never references the claims table", () => {
     const src = readFileSync(path.resolve(__dirname, "../src/server/owner.ts"), "utf8");
     expect(src).not.toMatch(/\bclaims\b/);
